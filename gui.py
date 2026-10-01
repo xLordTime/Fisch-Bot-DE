@@ -9,9 +9,9 @@ import ctypes
 import json
 import os
 import sys
-import tempfile
 import threading
 import webbrowser
+from pathlib import Path
 
 from PyQt6.QtCore import Qt, QObject, pyqtSignal
 from PyQt6.QtWidgets import (
@@ -23,11 +23,12 @@ from PyQt6.QtWidgets import (
 
 import FishBot_Updated_2026 as core
 import updater
+from app_paths import APP_DATA_DIR, SETTINGS_PATH, UPDATE_DIR, ensure_app_data_dir
 from version import CURRENT_VERSION
 from loguru import logger
 
-APP_DIR = os.path.dirname(sys.executable if getattr(sys, "frozen", False) else os.path.abspath(__file__))
-SETTINGS_PATH = os.path.join(APP_DIR, "settings.json")
+LEGACY_APP_DIR = os.path.dirname(sys.executable if getattr(sys, "frozen", False) else os.path.abspath(__file__))
+LEGACY_SETTINGS_PATH = Path(LEGACY_APP_DIR) / "settings.json"
 
 SCHOOL_OPTIONS = ["Any", "Fire", "Ice", "Storm", "Myth", "Life", "Death", "Balance",
                    "Sun", "Moon", "Star", "Shadow", "Astral"]
@@ -53,16 +54,25 @@ SETTINGS_SPEC = {
 
 
 def load_settings_dict() -> dict:
-    if os.path.exists(SETTINGS_PATH):
+    settings_source = SETTINGS_PATH
+    if not settings_source.exists() and LEGACY_SETTINGS_PATH.exists():
+        settings_source = LEGACY_SETTINGS_PATH
+
+    if settings_source.exists():
         try:
-            with open(SETTINGS_PATH, "r", encoding="utf-8") as f:
-                return json.load(f)
+            with open(settings_source, "r", encoding="utf-8") as f:
+                values = json.load(f)
+            if settings_source != SETTINGS_PATH:
+                save_settings_dict(values)
+                logger.info(f"Alte Einstellungen nach {APP_DATA_DIR} migriert")
+            return values
         except Exception:
             logger.warning("settings.json konnte nicht gelesen werden, nutze Standardwerte")
     return {}
 
 
 def save_settings_dict(values: dict) -> None:
+    ensure_app_data_dir()
     with open(SETTINGS_PATH, "w", encoding="utf-8") as f:
         json.dump(values, f, indent=2, ensure_ascii=False)
 
@@ -495,7 +505,12 @@ class MainWindow(QMainWindow):
         show_dialog()
 
     def _download_and_apply(self, release: "updater.ReleaseInfo"):
-        dest = os.path.join(tempfile.gettempdir(), release.asset_name)
+        if not release.asset_name or not release.asset_download_url:
+            QMessageBox.warning(self, "Update", "Das Release enthaelt kein herunterladbares EXE-Asset.")
+            return
+        UPDATE_DIR.mkdir(parents=True, exist_ok=True)
+        dest = str(UPDATE_DIR / release.asset_name)
+        asset_url = release.asset_download_url
         progress = QProgressDialog("Update wird heruntergeladen...", "Abbrechen", 0, 100, self)
         progress.setWindowModality(Qt.WindowModality.WindowModal)
         progress.show()
@@ -505,7 +520,7 @@ class MainWindow(QMainWindow):
                 if total:
                     progress.setValue(int(done / total * 100))
             try:
-                updater.download_asset(release.asset_download_url, dest, on_progress)
+                updater.download_asset(asset_url, dest, on_progress)
             except Exception as exc:
                 logger.error(f"Update-Download fehlgeschlagen: {exc}")
                 return

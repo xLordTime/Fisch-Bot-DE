@@ -50,3 +50,5 @@ in der GUI (`updater.py`) funktioniert und die Nutzer eine funktionierende EXE b
 - [ ] Falls sich das Patch-Format grundlegend geaendert hat (neue Settings-Felder etc.),
       pruefen ob alte `settings.json`-Dateien noch kompatibel geladen werden (fehlende
       Felder fallen in `gui.py` automatisch auf Standardwerte zurueck).
+- [ ] Dauerhafte Nutzerdaten immer ueber `app_paths.py` unter
+      `%LOCALAPPDATA%\FischBotDE` speichern; keine Daten neben der EXE ablegen.

@@ -7,12 +7,12 @@ the user to the release page instead.
 import os
 import sys
 import subprocess
-import tempfile
 from dataclasses import dataclass
 from typing import Optional, Callable
 
 import requests
 
+from app_paths import UPDATE_DIR
 from version import CURRENT_VERSION, GITHUB_OWNER, GITHUB_REPO
 
 API_LATEST_RELEASE = f"https://api.github.com/repos/{GITHUB_OWNER}/{GITHUB_REPO}/releases/latest"
@@ -99,7 +99,8 @@ def apply_update_and_restart(new_exe_path: str) -> None:
 
     current_exe = sys.executable
     pid = os.getpid()
-    batch_path = os.path.join(tempfile.gettempdir(), "fischbot_update.bat")
+    UPDATE_DIR.mkdir(parents=True, exist_ok=True)
+    batch_path = os.path.join(UPDATE_DIR, "fischbot_update.bat")
 
     script = f"""@echo off
 :wait
