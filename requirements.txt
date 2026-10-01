@@ -1,0 +1,6 @@
+PyQt6
+requests
+loguru
+memobj
+pyinstaller
+wizwalker @ https://github.com/Vindaloniak/wizwalker/archive/refs/heads/development.zip

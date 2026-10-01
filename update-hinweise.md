@@ -1,0 +1,44 @@
+# Update-Hinweise (immer vor einem Release pruefen)
+
+Diese Liste musst du bei **jedem** Release beachten, damit die Auto-Update-Funktion
+in der GUI (`updater.py`) funktioniert und die Nutzer eine funktionierende EXE bekommen.
+
+## 1. Version erhoehen
+- [ ] `CURRENT_VERSION` in `version.py` erhoehen (z.B. `1.0.0` -> `1.0.1`).
+- [ ] Der GitHub-Release-**Tag** muss zur Version passen, z.B. Tag `v1.0.1` fuer `CURRENT_VERSION = "1.0.1"`.
+- [ ] Nur hoehere Versionsnummern werden von `updater.is_newer()` als Update erkannt
+      (Format `MAJOR.MINOR.PATCH`, rein numerisch vergleichen).
+
+## 2. WizWalker-Abhaengigkeit pruefen
+- [ ] Vor jedem Build sicherstellen, dass der WizWalker-development-Branch aktuell und
+      kompatibel ist (Spiel-Patches/Signaturen koennen sich nach einem Wizard101-Update
+      aendern).
+- [ ] `build_exe.ps1` ausfuehren - das Skript installiert WizWalker **zwingend neu**
+      (`pip install --upgrade --force-reinstall ".../development.zip"`), bevor die EXE
+      gebaut wird. Diesen Schritt nicht manuell ueberspringen.
+- [ ] Nach dem Build kurz gegen ein laufendes Wizard101-Fenster testen (Hook-Tab -> Hooken,
+      Start, ein paar Fische fangen, Stop, Enthooken).
+
+## 3. Build
+- [ ] `powershell -ExecutionPolicy Bypass -File build_exe.ps1` lokal auf einem sauberen
+      Python-3.13-Setup laufen lassen.
+- [ ] Pruefen, dass `dist\FischBotDE.exe` existiert und startet (inkl. UAC-Admin-Prompt).
+- [ ] `settings.json` im Build-Ordner loeschen/ignorieren, damit sie nicht versehentlich
+      mit hochgeladen wird (enthaelt lokale Nutzereinstellungen).
+
+## 4. GitHub Release
+- [ ] Release auf https://github.com/xLordTime/Fisch-Bot-DE erstellen.
+- [ ] Tag-Name exakt wie in Schritt 1 (`vX.Y.Z`).
+- [ ] **`FischBotDE.exe` als Release-Asset hochladen** - ohne eine `.exe` im Release
+      findet `updater.py` kein Downloadlink und kann nicht automatisch aktualisieren.
+- [ ] Release-Notes (Changelog) in das Release-Textfeld schreiben - wird den Nutzern im
+      Update-Dialog angezeigt.
+- [ ] Release **nicht** als "Draft" oder "Pre-release" markieren, sonst taucht es nicht
+      als "latest" in der GitHub-API auf (`/releases/latest`), die `updater.py` abfragt.
+
+## 5. Nach dem Release
+- [ ] Mit einer alten EXE-Version testen, ob der Update-Check (Button oder Autostart)
+      das neue Release findet und der Download/Neustart funktioniert.
+- [ ] Falls sich das Patch-Format grundlegend geaendert hat (neue Settings-Felder etc.),
+      pruefen ob alte `settings.json`-Dateien noch kompatibel geladen werden (fehlende
+      Felder fallen in `gui.py` automatisch auf Standardwerte zurueck).
