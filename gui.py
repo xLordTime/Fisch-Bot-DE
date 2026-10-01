@@ -370,6 +370,9 @@ class MainWindow(QMainWindow):
             QMessageBox.warning(self, "Nicht gehookt", "Dieses Fenster muss zuerst gehookt werden.")
             return
 
+        self._assign_bot_client(client)
+
+    def _assign_bot_client(self, client):
         self.selected_bot_handle = client.window_handle
         core.set_external_client(self.client_handler, client)
         try:
@@ -453,6 +456,22 @@ class MainWindow(QMainWindow):
     def _on_start(self):
         if self.bot_thread and self.bot_thread.is_alive():
             return
+
+        if self.selected_bot_handle is None:
+            hooked_clients = [
+                client for client in self.client_handler.clients
+                if client.window_handle in self.hooked_handles
+            ]
+            if len(hooked_clients) == 1:
+                self._assign_bot_client(hooked_clients[0])
+            elif len(hooked_clients) > 1:
+                QMessageBox.warning(
+                    self, "Bot-Account auswaehlen",
+                    "Es sind mehrere Fenster gehookt. Bitte waehle im Hook-Tab zuerst "
+                    "den Bot-Account aus, damit kein Prozess erneut gehookt wird."
+                )
+                return
+
         self._push_settings_to_core()
         self.start_btn.setEnabled(False)
         self.stop_btn.setEnabled(True)

@@ -1020,8 +1020,10 @@ async def wait_to_click_window_with_name(client: Client, window_name: str, *, ti
 async def sell_basket(client: Client):
     if should_exit():
         return
+    logger.info("Basket cleanup requested; toggling backpack")
     await client.send_key(Keycode.V)
     while await window_exists(client, "Trash", check_if_visible=True) and not should_exit():
+        logger.info("Trash window is visible; selling selected items")
         while not (await window_exists(client, "centerButton")) and not should_exit():
             try:
                 async with client.mouse_handler:
@@ -1043,47 +1045,80 @@ async def sell_basket(client: Client):
         await client.send_key(Keycode.V)
 
 async def fetch_fish_list(fishing_manager):
+    last_error_log = 0.0
+    retry_count = 0
     while not should_exit():
         try:
-            return await fishing_manager.fish_list()
-        except RuntimeError:
+            fish_list = await fishing_manager.fish_list()
+            if retry_count:
+                logger.info(f"Fish-list reads recovered after {retry_count} retries")
+            return fish_list
+        except RuntimeError as exc:
+            retry_count += 1
+            if time() - last_error_log >= 5:
+                logger.warning(f"Fish-list read retry #{retry_count}: {exc}")
+                last_error_log = time()
             await asyncio.sleep(SLEEP_RETRY_DELAY)
     return []
 
 async def banish_config(fishing_manager):
     kept_fish = []
-    for fish in await fetch_fish_list(fishing_manager):
+    fish_list = await fetch_fish_list(fishing_manager)
+    logger.info(
+        f"Filtering {len(fish_list)} fish (chest={IS_CHEST}, school={SCHOOL}, rank={RANK}, "
+        f"id={ID}, size={SIZE_MIN}-{SIZE_MAX})"
+    )
+    rejected_count = 0
+    for fish in fish_list:
         fish_temp = await fish.template()
         fish_is_accepted = True
+        rejection_reasons = []
         fish_size = await fish.size()
         if (await fish.is_chest()) != IS_CHEST:
             fish_is_accepted = False
+            rejection_reasons.append("chest")
 
         if (SCHOOL != "Any") and (await fish_temp.school_name() != SCHOOL):
             fish_is_accepted = False
+            rejection_reasons.append("school")
 
         if (RANK != 0) and (await fish_temp.rank() != RANK):
             fish_is_accepted = False
+            rejection_reasons.append("rank")
 
         if (ID != 0) and (await fish.template_id() != ID):
             fish_is_accepted = False
+            rejection_reasons.append("id")
 
         if fish_size < SIZE_MIN or fish_size > SIZE_MAX:
             fish_is_accepted = False
+            rejection_reasons.append("size")
 
         if not fish_is_accepted:
             await fish.write_status_code(FishStatusCode.escaped)
+            rejected_count += 1
+            logger.debug(f"Rejected fish (size={fish_size:.2f}; reasons={rejection_reasons})")
         else:
             kept_fish.append(fish)
+    logger.info(f"Fish filter result: kept={len(kept_fish)}, escaped={rejected_count}")
     return kept_fish
 
 async def refresh_pond(client, fishing_manager):
     if should_exit():
         return
     fish_list = await banish_config(fishing_manager)
+    logger.info(f"Fishing pool has {len(fish_list)} fish matching the current filter")
+    last_empty_log = 0.0
     while len(fish_list) == 0 and not should_exit():
+        if time() - last_empty_log >= 5:
+            logger.info("No matching fish in pool; opening the fishing window to refresh it")
+            last_empty_log = time()
         fish_windows = await client.root_window.get_windows_with_name("FishingWindow")
+        last_window_log = 0.0
         while len(fish_windows) == 0 and not should_exit():
+            if time() - last_window_log >= 5:
+                logger.info("Pond refresh: FishingWindow not found; clicking OpenFishingButton")
+                last_window_log = time()
             async with client.mouse_handler:
                 await client.mouse_handler.click_window_with_name("OpenFishingButton")
             fish_windows = await client.root_window.get_windows_with_name("FishingWindow")
@@ -1093,15 +1128,19 @@ async def refresh_pond(client, fishing_manager):
             return
 
         fish_window: Window = fish_windows[0]
+        logger.info("Pond refresh: FishingWindow found; clicking Icon2")
         fish_sub_window = await fish_window.get_child_by_name("FishingSubWindow")
         bottomframe = await fish_sub_window.get_child_by_name("BottomFrame")
         icon2 = await bottomframe.get_child_by_name("Icon2")
         async with client.mouse_handler:
             await client.mouse_handler.click_window(icon2)
+        logger.info("Clicked pond refresh; waiting for fish list")
 
         while not should_exit():
             try:
-                if len(await fetch_fish_list(fishing_manager)) > 0:
+                available_fish = await fetch_fish_list(fishing_manager)
+                if len(available_fish) > 0:
+                    logger.info(f"Pond refresh: fish list repopulated with {len(available_fish)} fish")
                     break
             except RuntimeError:
                 await asyncio.sleep(SLEEP_RETRY_DELAY)
@@ -1111,6 +1150,10 @@ async def refresh_pond(client, fishing_manager):
 
         await asyncio.sleep(SLEEP_AFTER_CLICK)
         fish_list = await banish_config(fishing_manager)
+        if fish_list:
+            logger.info(f"Pond refresh complete; {len(fish_list)} fish match the current filter")
+        else:
+            await asyncio.sleep(SLEEP_WINDOW_WAIT)
 
 async def graceful_shutdown():
     logger.info("Initiating graceful shutdown...")
@@ -1156,10 +1199,12 @@ def signal_handler(signum, frame):
 async def main():
     reset_cleanup_state()
 
+    hooks_already_active = False
     if EXTERNAL_HANDLER is not None and EXTERNAL_CLIENT is not None:
         handler = EXTERNAL_HANDLER
         client = EXTERNAL_CLIENT
         _cleanup_state["owns_handler"] = False
+        hooks_already_active = True
     else:
         handler = ClientHandler()
         clients = handler.get_new_clients()
@@ -1178,8 +1223,12 @@ async def main():
     try:
         import wizwalker
         logger.info(f"Using wizwalker from {wizwalker.__file__}")
+        logger.info(f"Selected Wizard101 client PID={client.process_id}, window=0x{client.window_handle:X}")
         print("Preparing")
-        await client.activate_hooks()
+        if hooks_already_active:
+            logger.info("Reusing WizWalker hooks activated from the Hook tab")
+        else:
+            await client.activate_hooks()
         address_bytes = await patch(client)
         _cleanup_state["address_bytes"] = address_bytes
         _cleanup_state["patches_applied"] = True
@@ -1199,34 +1248,46 @@ async def main():
         print("Ready for Fish")
 
         fishing_manager = await client.game_client.fishing_manager()
+        logger.info("Fishing manager ready; starting fishing loop")
         fish_caught = 0
         total = time()
         while not _cleanup_state["shutdown_requested"]:
             start = time()
             await refresh_pond(client, fishing_manager)
             fish_list = await fetch_fish_list(fishing_manager)
+            logger.info(f"Starting fishing cycle with {len(fish_list)} fish in the pool")
 
             fish_windows = await client.root_window.get_windows_with_name("FishingWindow")
 
+            last_window_log = 0.0
             while len(fish_windows) == 0 and not should_exit():
+                if time() - last_window_log >= 5:
+                    logger.info("Waiting for FishingWindow; trying to open it")
+                    last_window_log = time()
                 async with client.mouse_handler:
                     await client.mouse_handler.click_window_with_name("OpenFishingButton")
                 fish_windows = await client.root_window.get_windows_with_name("FishingWindow")
+                await asyncio.sleep(SLEEP_WINDOW_WAIT)
 
             if should_exit():
                 break
 
             fish_window: Window = fish_windows[0]
+            logger.info("FishingWindow found; resolving Icon1 cast button")
             fish_sub_window = await fish_window.get_child_by_name("FishingSubWindow")
             bottomframe = await fish_sub_window.get_child_by_name("BottomFrame")
             icon1 = await bottomframe.get_child_by_name("Icon1")
             async with client.mouse_handler:
                 await client.mouse_handler.click_window(icon1)
+            logger.info("Icon1 click sent; waiting for fish status unknown2")
 
             is_hooked = False
             basket_full = False
+            last_status_log = 0.0
+            previous_status_names = None
             while not is_hooked and not should_exit():
                 if await window_exists(client, "MessageBoxModalWindow"):
+                    logger.warning("MessageBoxModalWindow detected; handling full basket")
                     await wait_to_click_window_with_name(client, "rightButton")
                     await sell_basket(client)
                     basket_full = True
@@ -1238,6 +1299,17 @@ async def main():
                     if status == FishStatusCode.unknown2:
                         is_hooked = True
                         break
+                if is_hooked:
+                    logger.info("Bite detected; pressing Space")
+                else:
+                    status_names = [status.name for status in statuses]
+                    if status_names != previous_status_names or time() - last_status_log >= 5:
+                        logger.info(
+                            f"Waiting for bite: tracked={len(fish_list)}, statuses={status_names}"
+                        )
+                        previous_status_names = status_names
+                        last_status_log = time()
+                    await asyncio.sleep(SLEEP_POLL_INTERVAL)
 
             if should_exit():
                 break
@@ -1245,7 +1317,9 @@ async def main():
             if basket_full:
                 continue
 
+            logger.info("Sending SPACEBAR to reel in fish")
             await client.send_key(Keycode.SPACEBAR)
+            logger.info(f"SPACEBAR sent; popup-skip setting={SKIP_CAUGHT_FISH_POPUP}")
 
             fish_failed = False
             if SKIP_CAUGHT_FISH_POPUP:
@@ -1279,8 +1353,11 @@ async def main():
                         logger.debug(f"Enabled {button_name} at {hex(btn_addr)}")
                         return True
 
-                    await enable_button("OpenFishingButton")
-                    await enable_button("CloseFishingButton")
+                    open_enabled = await enable_button("OpenFishingButton")
+                    close_enabled = await enable_button("CloseFishingButton")
+                    logger.info(
+                        f"Caught-fish popup bypass: open-button={open_enabled}, close-button={close_enabled}"
+                    )
 
                 except Exception as e:
                     logger.warning(f"Failed to re-enable fishing buttons: {e}")
@@ -1294,11 +1371,16 @@ async def main():
                         logger.error(f"Fallback also failed: {e2}")
             else:
                 timeout = time()
+                logger.info("Waiting for CaughtFishModalWindow")
                 while len(await client.root_window.get_windows_with_name("CaughtFishModalWindow")) == 0 and not should_exit():
                     if time() - timeout >= 10:
                         fish_failed = True
+                        logger.warning("CaughtFishModalWindow did not appear within 10 seconds; retrying fishing cycle")
                         break
                     await asyncio.sleep(SLEEP_POLL_INTERVAL)
+
+                if not fish_failed and not should_exit():
+                    logger.info("CaughtFishModalWindow appeared")
 
                 if should_exit():
                     break
@@ -1312,12 +1394,17 @@ async def main():
                     exit_button = await caught_fish.get_child_by_name("exit")
                     async with client.mouse_handler:
                         await client.mouse_handler.click_window(exit_button)
+                    logger.info("Closed caught-fish popup")
                     await asyncio.sleep(SLEEP_AFTER_CLICK)
 
             if should_exit():
                 break
 
             fish_caught += 1
+            logger.info(
+                f"Fishing cycle completed; total catches={fish_caught}, "
+                f"cycle_seconds={time() - start:.1f}"
+            )
 
             if fish_caught % 100 == 0 and not IS_CHEST:
                 await sell_basket(client)
