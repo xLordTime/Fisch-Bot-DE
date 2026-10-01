@@ -28,6 +28,8 @@ in der GUI (`updater.py`) funktioniert und die Nutzer eine funktionierende EXE b
 ## 3. Build
 - [ ] `powershell -ExecutionPolicy Bypass -File build_exe.ps1` lokal auf einem sauberen
       Python-3.13-Setup laufen lassen.
+- [ ] `FischBotDE.ico` muss vorhanden sein und aus dem aktuellen App-Icon erstellt worden sein;
+      das Build-Skript bettet es in die EXE ein.
 - [ ] Pruefen, dass `dist\FischBotDE.exe` existiert und startet (inkl. UAC-Admin-Prompt).
 - [ ] `settings.json` im Build-Ordner loeschen/ignorieren, damit sie nicht versehentlich
       mit hochgeladen wird (enthaelt lokale Nutzereinstellungen).

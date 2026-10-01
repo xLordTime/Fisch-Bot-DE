@@ -14,12 +14,13 @@ function Invoke-Checked {
 # 1) Python 3.13 bevorzugen, sonst auf eine vorhandene Version zurueckfallen
 #    (z.B. 3.12), damit der Build auch ohne 3.13-Installation funktioniert.
 $pythonVersion = "3.13"
-& py -3.13 --version *> $null
-if ($LASTEXITCODE -ne 0) {
+$availablePython = (& py -0 2>&1 | Out-String)
+if ($availablePython -notmatch '(?m)^\s*-V:3\.13(\s|$)') {
     Write-Host "Python 3.13 nicht gefunden, versuche 3.12..." -ForegroundColor Yellow
     $pythonVersion = "3.12"
     Invoke-Checked "Pruefe Python 3.12" { py -3.12 --version }
 } else {
+    Invoke-Checked "Pruefe Python 3.13" { py -3.13 --version }
     Write-Host "Verwende Python 3.13" -ForegroundColor Green
 }
 
@@ -56,6 +57,7 @@ Invoke-Checked "Baue EXE mit PyInstaller" {
         --onefile `
         --windowed `
         --uac-admin `
+        --icon "FischBotDE.ico" `
         --name "FischBotDE" `
         --collect-all wizwalker `
         --collect-all memobj `
