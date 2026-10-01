@@ -11,19 +11,31 @@ function Invoke-Checked {
     }
 }
 
-# 1) Python 3.13 muss vorhanden sein.
-Invoke-Checked "Pruefe Python 3.13" { py -3.13 --version }
+# 1) Python 3.13 bevorzugen, sonst auf eine vorhandene Version zurueckfallen
+#    (z.B. 3.12), damit der Build auch ohne 3.13-Installation funktioniert.
+$pythonVersion = "3.13"
+& py -3.13 --version *> $null
+if ($LASTEXITCODE -ne 0) {
+    Write-Host "Python 3.13 nicht gefunden, versuche 3.12..." -ForegroundColor Yellow
+    $pythonVersion = "3.12"
+    Invoke-Checked "Pruefe Python 3.12" { py -3.12 --version }
+} else {
+    Write-Host "Verwende Python 3.13" -ForegroundColor Green
+}
 
 # 2) WizWalker IMMER zuerst aus dem development-Branch neu installieren,
 #    da die Fishing-Signaturen darauf basieren.
 Invoke-Checked "Installiere WizWalker (development branch, erzwungen)" {
-    py -3.13 -m pip install --upgrade --force-reinstall `
+    py "-$pythonVersion" -m pip install --upgrade --force-reinstall `
         "https://github.com/Vindaloniak/wizwalker/archive/refs/heads/development.zip"
 }
 
 # 3) Restliche Abhaengigkeiten (inkl. PyInstaller) installieren.
+#    Hinweis: pip meldet hier evtl. einen Versionskonflikt zwischen wizwalker
+#    (will pefile<2024/regex<2025) und memobj (will neuere pefile/regex). Das
+#    ist nur eine Warnung von pip, kein Fehler - der Build funktioniert trotzdem.
 Invoke-Checked "Installiere restliche Abhaengigkeiten" {
-    py -3.13 -m pip install --upgrade PyQt6 requests loguru memobj pyinstaller
+    py "-$pythonVersion" -m pip install --upgrade PyQt6 requests loguru memobj pyinstaller
 }
 
 # 4) Alte Build-Artefakte entfernen.
@@ -39,7 +51,7 @@ if (Test-Path "FischBotDE.spec") {
 # 5) EXE bauen. --uac-admin sorgt dafuer, dass Windows automatisch nach
 #    Administratorrechten fragt (noetig fuer den Speicherzugriff).
 Invoke-Checked "Baue EXE mit PyInstaller" {
-    py -3.13 -m PyInstaller `
+    py "-$pythonVersion" -m PyInstaller `
         --noconfirm `
         --onefile `
         --windowed `

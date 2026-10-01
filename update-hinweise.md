@@ -18,6 +18,12 @@ in der GUI (`updater.py`) funktioniert und die Nutzer eine funktionierende EXE b
       gebaut wird. Diesen Schritt nicht manuell ueberspringen.
 - [ ] Nach dem Build kurz gegen ein laufendes Wizard101-Fenster testen (Hook-Tab -> Hooken,
       Start, ein paar Fische fangen, Stop, Enthooken).
+- [ ] pip meldet beim Installieren evtl. einen Versionskonflikt zwischen `wizwalker`
+      (will `pefile<2024`/`regex<2025`) und `memobj` (will neuere `pefile`/`regex`).
+      Das ist nur eine Resolver-**Warnung**, kein Fehler - Build und Bot funktionieren
+      trotzdem (so getestet beim v1.0.0-Release).
+- [ ] Falls auf dem Build-Rechner kein Python 3.13 installiert ist, faellt
+      `build_exe.ps1` automatisch auf 3.12 zurueck.
 
 ## 3. Build
 - [ ] `powershell -ExecutionPolicy Bypass -File build_exe.ps1` lokal auf einem sauberen
