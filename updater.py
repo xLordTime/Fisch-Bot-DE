@@ -68,19 +68,32 @@ def fetch_latest_release(timeout: float = 10.0) -> Optional[ReleaseInfo]:
 
 
 def download_asset(url: str, destination: str, progress_cb: Optional[Callable[[int, int], None]] = None,
-                    timeout: float = 30.0) -> None:
+                    timeout: float = 30.0, cancel_check: Optional[Callable[[], bool]] = None) -> None:
     with requests.get(url, stream=True, timeout=timeout) as resp:
         resp.raise_for_status()
         total = int(resp.headers.get("content-length", 0))
         done = 0
-        with open(destination, "wb") as f:
-            for chunk in resp.iter_content(chunk_size=1024 * 256):
-                if not chunk:
-                    continue
-                f.write(chunk)
-                done += len(chunk)
-                if progress_cb:
-                    progress_cb(done, total)
+        try:
+            with open(destination, "wb") as f:
+                for chunk in resp.iter_content(chunk_size=1024 * 256):
+                    if cancel_check and cancel_check():
+                        raise UpdateCancelled("Update-Download abgebrochen")
+                    if not chunk:
+                        continue
+                    f.write(chunk)
+                    done += len(chunk)
+                    if progress_cb:
+                        progress_cb(done, total)
+        except UpdateCancelled:
+            try:
+                os.remove(destination)
+            except OSError:
+                pass
+            raise
+
+
+class UpdateCancelled(Exception):
+    pass
 
 
 def is_frozen() -> bool:

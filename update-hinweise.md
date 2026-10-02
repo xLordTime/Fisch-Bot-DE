@@ -1,5 +1,13 @@
 # Update-Hinweise (immer vor einem Release pruefen)
 
+## Version 1.3.0 - UI-Refresh
+- [ ] Alle sechs Tabs pruefen: Hook, Fishing, Settings, Themes, Log und Credits.
+- [ ] Fishing-Schalter startet und stoppt den Bot; Standardzustand ist Aus.
+- [ ] Auto-Update ist standardmaessig aktiviert und die Auswahl bleibt nach Neustart erhalten.
+- [ ] Alle drei Themes wechseln und bleiben nach Neustart ausgewaehlt.
+- [ ] Erweiterte Wartezeiten starten eingeklappt; Tooltips sind nur in Settings sichtbar.
+- [ ] Log-Export startet im nativen Downloads-Ordner.
+
 Diese Liste musst du bei **jedem** Release beachten, damit die Auto-Update-Funktion
 in der GUI (`updater.py`) funktioniert und die Nutzer eine funktionierende EXE bekommen.
 
