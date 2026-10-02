@@ -58,6 +58,7 @@ Invoke-Checked "Baue EXE mit PyInstaller" {
         --windowed `
         --uac-admin `
         --icon "FischBotDE.ico" `
+        --add-data "Angel Bot Icon.png;." `
         --name "FischBotDE" `
         --collect-all wizwalker `
         --collect-all memobj `

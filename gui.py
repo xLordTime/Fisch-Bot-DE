@@ -13,12 +13,16 @@ import threading
 import webbrowser
 from pathlib import Path
 
-from PyQt6.QtCore import Qt, QObject, pyqtSignal, QVariantAnimation, QEasingCurve
-from PyQt6.QtGui import QPainter, QColor
+from PyQt6.QtCore import (
+    Qt, QObject, pyqtSignal, QVariantAnimation, QEasingCurve,
+    QParallelAnimationGroup, QPropertyAnimation,
+)
+from PyQt6.QtGui import QPainter, QColor, QIcon
 from PyQt6.QtWidgets import (
     QApplication, QMainWindow, QWidget, QVBoxLayout, QHBoxLayout, QFormLayout,
     QGroupBox, QCheckBox, QComboBox, QSpinBox, QDoubleSpinBox, QPushButton,
-    QPlainTextEdit, QLabel, QTabWidget, QMessageBox, QProgressDialog,
+    QPlainTextEdit, QLabel, QTabWidget, QStackedWidget, QStackedLayout,
+    QMessageBox, QProgressDialog,
     QTableWidget, QTableWidgetItem, QHeaderView, QAbstractItemView,
     QScrollArea, QToolButton, QFrame, QFileDialog, QGraphicsOpacityEffect,
 )
@@ -35,6 +39,14 @@ LEGACY_SETTINGS_PATH = Path(LEGACY_APP_DIR) / "settings.json"
 
 SCHOOL_OPTIONS = ["Any", "Fire", "Ice", "Storm", "Myth", "Life", "Death", "Balance",
                    "Sun", "Moon", "Star", "Shadow", "Astral"]
+
+
+def _resource_path(filename: str) -> Path:
+    base_path = Path(getattr(sys, "_MEIPASS", Path(__file__).resolve().parent))
+    return base_path / filename
+
+
+APP_ICON_PATH = _resource_path("Angel Bot Icon.png")
 THEMES = {
     "Default Black": {"background": "#111417", "surface": "#1a1f23", "raised": "#242b30", "text": "#edf3f2", "muted": "#a1adaa", "accent": "#55d6bd", "accent_text": "#10201e", "border": "#343d41"},
     "Aqua Park": {"background": "#09292d", "surface": "#10383b", "raised": "#185052", "text": "#e8fbf7", "muted": "#a8d0c9", "accent": "#53e0cd", "accent_text": "#08211f", "border": "#286466"},
@@ -105,6 +117,114 @@ class UpdateBridge(QObject):
 
 class BotBridge(QObject):
     finished = pyqtSignal()
+
+
+class SlidingTabWidget(QTabWidget):
+    def __init__(self, parent=None):
+        super().__init__(parent)
+        self._stack = self.findChild(QStackedWidget)
+        layout = self._stack.layout() if self._stack is not None else None
+        self._stack_layout = layout if isinstance(layout, QStackedLayout) else None
+        if self._stack_layout is not None:
+            self._stack_layout.setStackingMode(QStackedLayout.StackingMode.StackAll)
+        self._animations_enabled = False
+        self._active_index = -1
+        self._transition_index = -1
+        self._animation_group = QParallelAnimationGroup(self)
+        self._animation_group.finished.connect(self._finish_transition)
+        self.currentChanged.connect(self._on_current_changed)
+
+    def addTab(self, widget: QWidget, label: str) -> int:
+        index = super().addTab(widget, label)
+        if index != self.currentIndex():
+            widget.hide()
+        elif self._active_index < 0:
+            self._active_index = index
+        return index
+
+    def enable_slide_animations(self):
+        self._animations_enabled = self._stack is not None and self._stack_layout is not None
+        self._active_index = self.currentIndex()
+        for index in range(self.count()):
+            page = self.widget(index)
+            if page is None:
+                continue
+            if index == self._active_index:
+                page.setGeometry(self._stack.contentsRect())
+                page.show()
+                page.raise_()
+            else:
+                page.hide()
+
+    def _on_current_changed(self, index: int):
+        if not self._animations_enabled or index < 0:
+            self._active_index = index
+            return
+        stack = self._stack
+        stack_layout = self._stack_layout
+        if stack is None or stack_layout is None:
+            self._active_index = index
+            return
+
+        if self._animation_group.state() == QPropertyAnimation.State.Running:
+            self._animation_group.stop()
+            self._finish_transition()
+
+        old_index = self._active_index
+        old_page = self.widget(old_index) if old_index >= 0 else None
+        new_page = self.widget(index)
+        if old_page is None or new_page is None or old_page is new_page:
+            self._active_index = index
+            return
+
+        bounds = stack.contentsRect()
+        direction = 1 if index > old_index else -1
+        for page_index in range(self.count()):
+            page = self.widget(page_index)
+            if page is not None and page not in (old_page, new_page):
+                page.hide()
+
+        stack_layout.setCurrentIndex(index)
+        old_page.setGeometry(bounds)
+        new_page.setGeometry(bounds.translated(direction * bounds.width(), 0))
+        old_page.show()
+        new_page.show()
+        new_page.raise_()
+
+        self._animation_group.clear()
+        for page, start, end in (
+            (new_page, new_page.geometry(), bounds),
+            (old_page, old_page.geometry(), bounds.translated(-direction * bounds.width(), 0)),
+        ):
+            animation = QPropertyAnimation(page, b"geometry", self._animation_group)
+            animation.setDuration(240)
+            animation.setEasingCurve(QEasingCurve.Type.InOutCubic)
+            animation.setStartValue(start)
+            animation.setEndValue(end)
+
+        self._transition_index = index
+        self._animation_group.start()
+
+    def _finish_transition(self):
+        index = self._transition_index
+        stack = self._stack
+        stack_layout = self._stack_layout
+        if index < 0 or stack is None or stack_layout is None:
+            return
+        bounds = stack.contentsRect()
+        for page_index in range(self.count()):
+            page = self.widget(page_index)
+            if page is None:
+                continue
+            if page_index == index:
+                page.setGeometry(bounds)
+                page.show()
+                page.raise_()
+            else:
+                page.hide()
+        stack_layout.setCurrentIndex(index)
+        self._active_index = index
+        self._transition_index = -1
 
 
 class AnimatedToggle(QCheckBox):
@@ -185,6 +305,7 @@ class MainWindow(QMainWindow):
     def __init__(self):
         super().__init__()
         self.setWindowTitle(f"Fisch-Bot DE  v{CURRENT_VERSION}")
+        self.setWindowIcon(QIcon(str(APP_ICON_PATH)))
         self.resize(560, 640)
 
         self.bot_thread: BotThread | None = None
@@ -223,7 +344,7 @@ class MainWindow(QMainWindow):
 
     # ---------------------------------------------------------------- UI --
     def _build_ui(self):
-        tabs = QTabWidget()
+        tabs = SlidingTabWidget()
         self.setCentralWidget(tabs)
 
         hook_tab = QWidget()
@@ -245,6 +366,7 @@ class MainWindow(QMainWindow):
         self._build_themes_tab(themes_tab)
         self._build_log_tab(log_tab)
         self._build_credits_tab(credits_tab)
+        tabs.enable_slide_animations()
 
         self.setMinimumSize(760, 680)
         self.setStyleSheet(self._theme_stylesheet("Default Black"))
@@ -340,7 +462,7 @@ class MainWindow(QMainWindow):
         self.speedhack_speed.setSingleStep(0.1)
         self.speedhack_speed.setDecimals(1)
         self.speedhack_speed.setMinimumWidth(96)
-        self.speedhack_speed.setAlignment(Qt.AlignmentFlag.AlignRight)
+        self.speedhack_speed.setAlignment(Qt.AlignmentFlag.AlignLeft)
         self.speed_row = QWidget()
         speed_row_layout = QHBoxLayout(self.speed_row)
         speed_row_layout.setContentsMargins(0, 0, 0, 0)
@@ -482,7 +604,7 @@ class MainWindow(QMainWindow):
     def _make_integer_spin(maximum: int, minimum: int) -> QSpinBox:
         spin = QSpinBox()
         spin.setRange(minimum, maximum)
-        spin.setAlignment(Qt.AlignmentFlag.AlignRight)
+        spin.setAlignment(Qt.AlignmentFlag.AlignLeft)
         spin.setMinimumWidth(max(82, len(str(maximum)) * 11 + 34))
         return spin
 
@@ -560,7 +682,7 @@ class MainWindow(QMainWindow):
 
         info = QLabel(
             "Hier siehst du alle offenen Wizard101-Fenster (z.B. mehrere Accounts). "
-            "Hooke das Fenster, das der Bot steuern soll, und waehle es als Bot-Account aus."
+            "Waehle ein Fenster und klicke auf Hooken. Nach erfolgreichem Hook wird es automatisch fuer Fishing ausgewaehlt."
         )
         info.setWordWrap(True)
         layout.addWidget(info)
@@ -585,12 +707,9 @@ class MainWindow(QMainWindow):
         self.hook_btn.clicked.connect(self._hook_selected)
         self.unhook_btn = QPushButton("Enthooken")
         self.unhook_btn.clicked.connect(self._unhook_selected)
-        self.select_bot_btn = QPushButton("Als Bot-Account auswaehlen")
-        self.select_bot_btn.clicked.connect(self._select_bot_client)
         button_row.addWidget(self.refresh_btn)
         button_row.addWidget(self.hook_btn)
         button_row.addWidget(self.unhook_btn)
-        button_row.addWidget(self.select_bot_btn)
         layout.addLayout(button_row)
 
         self.hook_account_label = QLabel("Bot-Account: keiner ausgewaehlt (Bot nimmt das erste gefundene Fenster)")
@@ -660,6 +779,12 @@ class MainWindow(QMainWindow):
             if success:
                 self.hooked_handles.add(handle)
                 logger.info(f"Fenster 0x{handle:X} gehookt")
+                client = next(
+                    (item for item in self.client_handler.clients if item.window_handle == handle),
+                    None,
+                )
+                if client is not None:
+                    self._assign_bot_client(client)
             else:
                 logger.error(f"Hooken von 0x{handle:X} fehlgeschlagen: {message}")
                 QMessageBox.warning(self, "Hooken fehlgeschlagen", message)
@@ -673,17 +798,6 @@ class MainWindow(QMainWindow):
                 logger.error(f"Enthooken von 0x{handle:X} fehlgeschlagen: {message}")
                 QMessageBox.warning(self, "Enthooken fehlgeschlagen", message)
         self._refresh_clients()
-
-    def _select_bot_client(self):
-        client = self._get_selected_client()
-        if client is None:
-            QMessageBox.warning(self, "Kein Fenster ausgewaehlt", "Bitte zuerst ein Fenster in der Liste auswaehlen.")
-            return
-        if client.window_handle not in self.hooked_handles:
-            QMessageBox.warning(self, "Nicht gehookt", "Dieses Fenster muss zuerst gehookt werden.")
-            return
-
-        self._assign_bot_client(client)
 
     def _assign_bot_client(self, client):
         self.selected_bot_handle = client.window_handle
@@ -711,7 +825,7 @@ class MainWindow(QMainWindow):
         spin.setDecimals(3)
         spin.setSingleStep(0.005)
         spin.setMinimumWidth(96)
-        spin.setAlignment(Qt.AlignmentFlag.AlignRight)
+        spin.setAlignment(Qt.AlignmentFlag.AlignLeft)
         return spin
 
     # ----------------------------------------------------------- Settings --
@@ -948,6 +1062,7 @@ class MainWindow(QMainWindow):
 
 def main():
     app = QApplication(sys.argv)
+    app.setWindowIcon(QIcon(str(APP_ICON_PATH)))
     window = MainWindow()
     window.show()
     sys.exit(app.exec())

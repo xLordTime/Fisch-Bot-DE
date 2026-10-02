@@ -1,5 +1,10 @@
 # Update-Hinweise (immer vor einem Release pruefen)
 
+## Version 1.3.1 - UI-Politur
+- [ ] Tabwechsel gleiten in beide Richtungen.
+- [ ] Fischmotiv erscheint als Fenstersymbol und ist im Onefile-Build enthalten.
+- [ ] Numerische Settings-Werte sind linksbuendig; erfolgreicher Hook waehlt den Client fuer Fishing aus.
+
 ## Version 1.3.0 - UI-Refresh
 - [ ] Alle sechs Tabs pruefen: Hook, Fishing, Settings, Themes, Log und Credits.
 - [ ] Fishing-Schalter startet und stoppt den Bot; Standardzustand ist Aus.
